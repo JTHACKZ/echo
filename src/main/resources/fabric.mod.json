@@ -19,7 +19,7 @@
 			"me.echo.Echo"
 		],
 		"client": [
-			"me.echo.EchoClient"
+			"me.echo.client.ECHOClient"
 		]
 	},
 	"mixins": [
