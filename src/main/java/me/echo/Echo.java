@@ -76,7 +76,8 @@ public class Echo implements ModInitializer {
 					LOGGER.info("[Echo Brain] Loading internal GGUF model: " + modelPath.getName());
 
 					ModelParameters params = new ModelParameters()
-							.setModel(modelPath.getAbsolutePath());
+							.setModel(modelPath.getAbsolutePath())
+							.setGpuLayers(99);
 
 					aiModel = new LlamaModel(params);
 					isBrainLoaded = true;
