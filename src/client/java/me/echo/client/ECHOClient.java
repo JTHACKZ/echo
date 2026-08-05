@@ -7,6 +7,10 @@ import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import me.echo.client.render.ConstructEntityRenderer;
+import me.echo.registry.ModEntities;
+import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry;
 
 @Environment(EnvType.CLIENT)
 public class ECHOClient implements ClientModInitializer {
@@ -15,6 +19,7 @@ public class ECHOClient implements ClientModInitializer {
     public void onInitializeClient() {
         HudRenderCallback.EVENT.register((guiGraphics, tickDelta) -> {
             Minecraft client = Minecraft.getInstance();
+            EntityRendererRegistry.register(ModEntities.CONSTRUCT_ENTITY, ConstructEntityRenderer::new);
 
             if (client.player != null) {
                 // Pin to bottom right corner
