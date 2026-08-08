@@ -6,6 +6,7 @@ import com.google.gson.JsonParser;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import me.echo.constructs.ConstructToolbox;
+import me.echo.engine.MethodLibrary;
 import me.echo.registry.ModEntities;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -51,21 +52,28 @@ public class Echo implements ModInitializer {
             1. NEVER chat, apologize, explain, or say "Here is the command". Output ONLY valid syntax.
             2. SIMPLE COMMANDS: For vanilla actions (give item, potion effect, time, weather, spawn mob), output ONLY `<<run:/command>>`.
             3. BLUEPRINTS: When requested to make a construct, output ONLY this exact JSON tag:
-               <<blueprint:slot1|{"name":"Green Wall","shape":"wall","size":4.0,"mode":"camera"}>>
-               Allowed "shape": "wall", "shield", "platform", "beam", "sphere", "box".
-               Allowed "mode": "camera" (follows eyes), "feet" (follows under boots), "static" (stays in place).
-               NEVER add extra JSON keys like color, duration, opacity, or followCamera.
+               <<blueprint:slot1|{"name":"Black Hole","shape":"sphere","size":5.0,"mode":"static","y_offset":2.0,"java_code":"...","save_as":"Black Hole","duration":0}>>
+               Allowed "shape": "wall", "shield", "platform", "beam", "sphere", "box", "clear".
+               Allowed "mode": "camera" (front of eyes), "feet" (under boots flat), "hover" (under boots tilting), "body" (surrounding player), "static" (stationary).
+               SAVING & LOADING PERMANENT METHODS:
+               - To permanently SAVE a new custom tool/method to disk: include `"save_as": "Method Name"` along with `"java_code"`.
+               - To LOAD and summon a previously saved method: output ONLY `<<blueprint:slot1|{"load_method":"Method Name"}>>`.
+               LIVE NATIVE JAVA BYTECODE INJECTION ("java_code"):
+               - You can write LIVE Java statements executed every tick! Variables available: `construct`, `level`, `owner`.
+               IMPORTANT: If the user asks to remove, clear, stop, or delete a construct, output "shape": "clear".
+               NEVER add extra JSON keys like color, opacity, or followCamera.
             """;
 
 	@Override
 	public void onInitialize() {
-		// MUST BE CALLED FIRST before registries freeze!
 		ModEntities.register();
+		MethodLibrary.init();
 
 		LOGGER.info("[Echo] Native Blueprint Engine Initializing...");
 
 		File engineFolder = new File("echo_systems/engine");
 		File modelFolder = new File("echo_systems/models");
+		File aiMethodsFolder = new File("src/main/java/me/echo/ai_created/methods");
 
 		if (!engineFolder.exists()) {
 			boolean created = engineFolder.mkdirs();
@@ -74,6 +82,10 @@ public class Echo implements ModInitializer {
 		if (!modelFolder.exists()) {
 			boolean created = modelFolder.mkdirs();
 			if (!created) LOGGER.warn("[Echo] Models directory creation checked.");
+		}
+		if (!aiMethodsFolder.exists()) {
+			boolean created = aiMethodsFolder.mkdirs();
+			if (!created) LOGGER.warn("[Echo] AI Created Methods directory creation checked.");
 		}
 
 		new Thread(this::startLlamaServer).start();
@@ -191,9 +203,15 @@ public class Echo implements ModInitializer {
 
 								new Thread(() -> {
 									try {
+										List<String> savedNames = MethodLibrary.getSavedMethodNames();
+										String dynamicPrompt = SYSTEM_PROMPT;
+										if (!savedNames.isEmpty()) {
+											dynamicPrompt += "\nUNLOCKED PERMANENT METHODS AVAILABLE ON DISK: " + savedNames;
+										}
+
 										JsonObject sysMsg = new JsonObject();
 										sysMsg.addProperty("role", "system");
-										sysMsg.addProperty("content", SYSTEM_PROMPT);
+										sysMsg.addProperty("content", dynamicPrompt);
 
 										JsonObject usrMsg = new JsonObject();
 										usrMsg.addProperty("role", "user");
@@ -206,12 +224,11 @@ public class Echo implements ModInitializer {
 										}
 										messages.add(usrMsg);
 
-										// HARD GUARDRAILS AGAINST INFINITE AI LOOPS
 										JsonObject payload = new JsonObject();
 										payload.add("messages", messages);
 										payload.addProperty("temperature", 0.2);
-										payload.addProperty("max_tokens", 150); // Hard ceiling: cannot scream zeroes
-										payload.addProperty("frequency_penalty", 0.5); // Punishes repeated numeric characters
+										payload.addProperty("max_tokens", 250); // Increased slightly for longer Java code payloads
+										payload.addProperty("frequency_penalty", 0.5);
 										payload.addProperty("stream", false);
 
 										HttpRequest request = HttpRequest.newBuilder()
@@ -241,22 +258,67 @@ public class Echo implements ModInitializer {
 											}
 
 											List<String> commandsToRun = new ArrayList<>();
-											Pattern cmdPattern = Pattern.compile("<<run:\\s*(.*?)>>");
+											Pattern cmdPattern = Pattern.compile("<<run:\\s*(.*?)(?:>>|\\}\\})");
 											Matcher cmdMatcher = cmdPattern.matcher(responseText);
 											while (cmdMatcher.find()) {
 												commandsToRun.add(cmdMatcher.group(1).trim());
 											}
 
-											// Robust Regex matching even if formatting has spaces
+											// --- ROBUST BRACE-BALANCING JSON EXTRACTOR ---
+											// Replaces the fragile regex to ensure Java brackets inside strings are perfectly ignored
 											List<String> blueprintsToRun = new ArrayList<>();
-											Pattern bpExtractPattern = Pattern.compile("<<blueprint:\\s*(?:slot\\d\\s*\\|\\s*)?(\\{[\\s\\S]*?\\})\\s*>>");
-											Matcher bpExtractMatcher = bpExtractPattern.matcher(responseText);
-											while (bpExtractMatcher.find()) {
-												blueprintsToRun.add(bpExtractMatcher.group(1).trim());
+											int idx = 0;
+											while ((idx = responseText.indexOf("<<blueprint:", idx)) != -1) {
+												int jsonStart = responseText.indexOf('{', idx);
+												if (jsonStart != -1) {
+													int braceCount = 0;
+													boolean inQuotes = false;
+													boolean escape = false;
+													int jsonEnd = -1;
+
+													for (int i = jsonStart; i < responseText.length(); i++) {
+														char c = responseText.charAt(i);
+														if (escape) {
+															escape = false;
+															continue;
+														}
+														if (c == '\\') {
+															escape = true;
+															continue;
+														}
+														if (c == '"') {
+															inQuotes = !inQuotes;
+															continue;
+														}
+														if (!inQuotes) {
+															if (c == '{') braceCount++;
+															else if (c == '}') braceCount--;
+
+															if (braceCount == 0) {
+																jsonEnd = i;
+																break;
+															}
+														}
+													}
+
+													if (jsonEnd != -1) {
+														blueprintsToRun.add(responseText.substring(jsonStart, jsonEnd + 1));
+														idx = jsonEnd + 1;
+													} else {
+														idx += 12; // skip past tag if broken
+													}
+												} else {
+													idx += 12;
+												}
 											}
 
+											// Clean chat by entirely wiping any blueprint blocks from text output
 											String cleanChat = cmdPattern.matcher(responseText).replaceAll("");
-											cleanChat = cleanChat.replaceAll("<<blueprint:.*?>>", "").trim();
+											int bpIndex = cleanChat.indexOf("<<blueprint:");
+											if (bpIndex != -1) {
+												cleanChat = cleanChat.substring(0, bpIndex);
+											}
+											cleanChat = cleanChat.trim();
 
 											if (!cleanChat.isEmpty()) {
 												context.getSource().sendSystemMessage(Component.literal("§b[Echo]: " + cleanChat));
@@ -267,10 +329,8 @@ public class Echo implements ModInitializer {
 												for (String cmd : commandsToRun) {
 													context.getSource().getServer().getCommands().performPrefixedCommand(context.getSource(), cmd);
 												}
-												for (String bp : blueprintsToRun) {
-													if (player != null) {
-														ConstructToolbox.executeBlueprint(player, bp);
-													}
+												if (player != null && !blueprintsToRun.isEmpty()) {
+													ConstructToolbox.executeBlueprintSequence(player, blueprintsToRun);
 												}
 											});
 

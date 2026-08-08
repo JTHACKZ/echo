@@ -15,12 +15,14 @@ repositories {
 }
 
 loom {
-	splitEnvironmentSourceSets()
+	// Your other loom settings might be here...
 
-	mods {
-		"echo" {
-			sourceSet sourceSets.main
-			sourceSet sourceSets.client
+	runs {
+		client {
+			vmArg "-Xverify:none"
+		}
+		server {
+			vmArg "-Xverify:none"
 		}
 	}
 }

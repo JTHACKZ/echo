@@ -1,17 +1,12 @@
 {
 	"schemaVersion": 1,
 	"id": "echo",
-	"version": "${version}",
-	"name": "ECHO",
-	"description": "This is an example description! Tell everyone what your mod is about!",
-	"authors": [
-		"Me!"
-	],
-	"contact": {
-		"homepage": "https://fabricmc.net/",
-		"sources": "https://github.com/FabricMC/fabric-example-mod"
-	},
-	"license": "CC0-1.0",
+	"version": "1.0.0",
+	"name": "Echo",
+	"description": "Native Green Lantern AI & Construct Mod",
+	"authors": [],
+	"contact": {},
+	"license": "MIT",
 	"icon": "assets/echo/icon.png",
 	"environment": "*",
 	"entrypoints": {
@@ -23,14 +18,10 @@
 		]
 	},
 	"mixins": [
-		"echo.mixins.json",
-		{
-			"config": "echo.client.mixins.json",
-			"environment": "client"
-		}
+		"echo.mixins.json"
 	],
 	"depends": {
-		"fabricloader": ">=0.19.3",
+		"fabricloader": ">=0.14.0",
 		"minecraft": "~1.20.1",
 		"java": ">=17",
 		"fabric-api": "*"

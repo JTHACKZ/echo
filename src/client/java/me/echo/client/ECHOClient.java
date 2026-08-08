@@ -1,25 +1,26 @@
 package me.echo.client;
 
 import me.echo.Echo;
-import net.fabricmc.api.ClientModInitializer;
-import net.fabricmc.api.EnvType;
-import net.fabricmc.api.Environment;
-import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
 import me.echo.client.render.ConstructEntityRenderer;
 import me.echo.registry.ModEntities;
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.api.EnvType;
+import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry;
+import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
 
 @Environment(EnvType.CLIENT)
 public class ECHOClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        // MUST BE CALLED DIRECTLY IN onInitializeClient() so Minecraft registers the renderer on boot!
+        EntityRendererRegistry.register(ModEntities.CONSTRUCT_ENTITY, ConstructEntityRenderer::new);
+
         HudRenderCallback.EVENT.register((guiGraphics, tickDelta) -> {
             Minecraft client = Minecraft.getInstance();
-            EntityRendererRegistry.register(ModEntities.CONSTRUCT_ENTITY, ConstructEntityRenderer::new);
 
             if (client.player != null) {
                 // Pin to bottom right corner
